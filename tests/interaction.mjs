@@ -4,13 +4,14 @@ import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 const base=process.env.SITE_URL||'http://127.0.0.1:5203/';
 const out=new URL('../evidence/',import.meta.url);fs.mkdirSync(out,{recursive:true});
-const browser=await chromium.launch({headless:true,...(!process.env.CI?{executablePath:'/usr/bin/google-chrome'}:{}),args:['--no-sandbox','--use-gl=angle',`--use-angle=${process.env.CI?'swiftshader':'gl'}`]});
+const browser=await chromium.launch({headless:true,...(process.env.CHROME_BIN||!process.env.CI?{executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome'}:{}),args:['--no-sandbox','--use-gl=angle',`--use-angle=${process.env.CI?'swiftshader':'gl'}`]});
 const page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[],checks=[];
 page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 const probe=()=>page.evaluate(()=>window.__exoProbe());
 const hash=b=>createHash('sha256').update(b).digest('hex');
 async function visiblePixels(region){const png=await page.locator('canvas').screenshot();return page.evaluate(async({png,region})=>{const im=new Image();im.src='data:image/png;base64,'+png;await im.decode();const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const ctx=c.getContext('2d');ctx.drawImage(im,0,0);const [x,y,w,h]=region.map(Math.floor);const data=ctx.getImageData(x,y,w,h).data;let n=0;for(let i=0;i<data.length;i+=4)if(data[i]>75&&data[i+1]>125&&data[i+2]>140)n++;return n;},{png:png.toString('base64'),region});}
 try{
+ if(process.env.CI){page.setDefaultTimeout(90000);await page.addInitScript(()=>Object.defineProperty(window,'devicePixelRatio',{get:()=>.3}));}
  await page.goto(base);await page.waitForFunction(()=>window.__exoProbe?.().swarm.ready);await page.waitForFunction(()=>window.__exoProbe().swarm.solidity===1);
  assert.equal(await page.getByRole('heading',{name:'Gregory Horn',exact:true}).count(),1);assert.equal(await page.getByRole('link',{name:'Download',exact:false}).count(),1);checks.push('minimal page: name top-left, real centred download, GitHub/project/Back links');
  const home=(await probe()).swarm.interaction.bounds,region=[home.left-3,home.top-5,home.width+8,home.height+10];const settledPixels=await visiblePixels(region);assert(settledPixels>1500);await page.screenshot({path:new URL('01-page.png',out).pathname});checks.push('solid name actually visible in rendered pixels');
@@ -26,4 +27,4 @@ try{
  for(const [width,height] of [[1280,720],[390,844]]){await page.setViewportSize({width,height});await page.waitForTimeout(200);for(const item of await page.locator('nav a,nav button,.download').all()){const b=await item.boundingBox();assert(b.x>=0&&b.y>=0&&b.x+b.width<=width&&b.y+b.height<=height);}await page.screenshot({path:new URL(`page-${width}.png`,out).pathname});}checks.push('download and every navigation control fit desktop and compact screens');
  await page.emulateMedia({reducedMotion:'reduce'});await page.reload();await page.waitForFunction(()=>window.__exoProbe?.().swarm.ready);await page.waitForTimeout(150);assert.equal((await probe()).swarm.solidity,1);assert.equal((await probe()).swarm.interaction.carry,0);const reduced=hash(await page.locator('canvas').screenshot());await page.mouse.move(100,100);await page.mouse.move(300,400);await page.waitForTimeout(250);assert.equal(hash(await page.locator('canvas').screenshot()),reduced);assert.equal((await probe()).rafScheduled,false);checks.push('reduced motion keeps a solid name and disables pointer animation');
  assert.deepEqual(errors,[]);const report={checks,cadence,pixelProof:{settledPixels,awayPixels,followPixels,returnedPixels},errors};fs.writeFileSync(new URL('checks.json',out),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
-}finally{await browser.close();}
+}catch(error){fs.writeFileSync(new URL('failure.json',out),JSON.stringify({error:String(error),probe:await probe().catch(()=>null),errors},null,2));await page.screenshot({path:new URL('failure.png',out).pathname}).catch(()=>{});throw error;}finally{await browser.close();}

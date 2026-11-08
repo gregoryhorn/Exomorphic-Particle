@@ -30,7 +30,7 @@ The preview uses port 5203. Serve only this project, never a parent directory co
 npm test
 ```
 
-Tests use Google Chrome locally. CI installs Playwright Chromium, uses software WebGL and does not impose a hardware frame-rate guarantee. Set SITE_URL to test a different built preview or the public page.
+Tests use Google Chrome locally. CI installs Playwright Chromium, uses software WebGL at a reduced backing resolution and does not impose a hardware frame-rate guarantee. Local full-resolution tests still exercise visible rendering and motion. CHROME_BIN can override the browser executable. Set SITE_URL to test a different built preview or the public page.
 
 ## Visual implementation
 
