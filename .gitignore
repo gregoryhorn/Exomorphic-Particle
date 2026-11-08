@@ -1,0 +1,7 @@
+node_modules/
+dist/
+evidence/
+public/downloads/
+.playwright/
+*.log
+.env*
